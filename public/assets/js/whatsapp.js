@@ -121,15 +121,33 @@ function checkStatus(id, isBackground = false) {
             if (!isBackground) toggleLoader(false);
 
             if (res.success && res.data) {
-                const connected = res.data.connected;
-                const status = res.data.status;
+                const connected = (res.data.connected === true || res.data.status === 'connected' || res.data.api_state === 'open');
+                const status = connected ? 'connected' : res.data.status;
                 const config = res.data.config;
 
                 updateCardUI(id, status, config);
 
                 if (connected) {
                     stopPolling(id);
-                    if (!isBackground) {
+                    const isModalOpen = $('#qrCodeModal').hasClass('show') || $('#qrCodeModal').is(':visible');
+                    const modalActiveId = $('#qrCodeModal').data('active-id');
+
+                    if (isModalOpen) {
+                        closeQRModal();
+                        $('#qrCodeModal').modal('hide');
+
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'WhatsApp Conectado!',
+                            text: 'Aparelho conectado com sucesso com a Evolution API.',
+                            confirmButtonColor: '#6366f1',
+                            confirmButtonText: 'Excelente!',
+                            timer: 3500,
+                            timerProgressBar: true
+                        }).then(() => {
+                            location.reload();
+                        });
+                    } else if (!isBackground) {
                         Swal.fire({
                             icon: 'success',
                             title: 'Conectado!',
@@ -139,7 +157,7 @@ function checkStatus(id, isBackground = false) {
                         });
                     }
                 } else if (status === 'waiting_qr') {
-                    if (res.data.qr_base64 && $('#qrCodeModal').is(':visible') && $('#qrCodeModal').data('active-id') == id) {
+                    if (res.data.qr_base64 && ($('#qrCodeModal').hasClass('show') || $('#qrCodeModal').is(':visible')) && $('#qrCodeModal').data('active-id') == id) {
                         renderQRCode(id, res.data.qr_base64);
                     }
                 }
@@ -163,13 +181,13 @@ function checkStatus(id, isBackground = false) {
 /**
  * Polls status in the background for a specific connection.
  */
-function startBackgroundPolling(id) {
+function startBackgroundPolling(id, intervalMs = POLLING_INTERVAL_MS) {
     if (activePollingIntervals[id]) clearInterval(activePollingIntervals[id]);
     
-    console.log("Polling started for connection " + id);
+    console.log("Polling started for connection " + id + " at " + intervalMs + "ms");
     activePollingIntervals[id] = setInterval(function () {
         checkStatus(id, true);
-    }, POLLING_INTERVAL_MS);
+    }, intervalMs);
 }
 
 function stopPolling(id = null) {
@@ -188,44 +206,38 @@ function updateCardUI(id, status, config) {
     const badgeIcon = $('#badge-icon-' + id);
     const badgeText = $('#badge-text-' + id);
     
-    // Reset classes
-    badge.removeClass(function (index, className) {
-        return (className.match(/(^|\s)bg-\S+/g) || []).join(' ');
-    }).removeClass(function (index, className) {
-        return (className.match(/(^|\s)text-\S+/g) || []).join(' ');
-    }).removeClass(function (index, className) {
-        return (className.match(/(^|\s)border-\S+/g) || []).join(' ');
-    });
+    // Reset all status and badge classes
+    badge.attr('class', 'badge-custom w-100');
 
-    let statusClass = 'secondary';
+    let badgeStatusClass = 'badge-' + status;
     let text = 'Desconhecido';
     let icon = 'question-circle';
 
     switch (status) {
         case 'connected':
-            statusClass = 'success';
             text = 'Conectado';
             icon = 'check-circle-fill';
             break;
         case 'waiting_qr':
-            statusClass = 'warning';
             text = 'Aguardando Conexão';
             icon = 'qr-code-scan';
             break;
         case 'disconnected':
-            statusClass = 'danger';
             text = 'Desconectado';
             icon = 'x-circle-fill';
             break;
         case 'configuring':
         case 'configured':
-            statusClass = 'info';
+            badgeStatusClass = 'badge-configured';
             text = 'Aguardando ação...';
             icon = 'hourglass-split';
             break;
+        default:
+            badgeStatusClass = 'badge-not_configured';
+            break;
     }
 
-    badge.addClass(`bg-${statusClass}-subtle text-${statusClass} border border-${statusClass}-subtle`);
+    badge.addClass(badgeStatusClass);
     badgeIcon.attr('class', `bi bi-${icon}`);
     badgeText.text(text);
     badge.attr('data-status', status);
@@ -242,11 +254,11 @@ function showQRModal(id) {
     $('#qrCodeModal').data('active-id', id);
     $('#qr-wrapper').html(`
         <div class="spinner-border text-primary mb-3" role="status"></div>
-        <p class="text-muted">Obtendo QR Code...</p>
+        <p class="text-secondary mb-0">Obtendo QR Code...</p>
     `);
     $('#qrCodeModal').modal('show');
     loadQRCode(id);
-    startBackgroundPolling(id);
+    startBackgroundPolling(id, 2500);
 }
 
 function closeQRModal() {
@@ -441,4 +453,40 @@ function syncProfile(id) {
 function exportJSON(id) {
     // Triggers download of the config JSON
     window.location.href = '/whatsapp/export/' + id;
+}
+
+/**
+ * Copies text to clipboard and gives visual feedback
+ */
+function copyInstanceName(instanceName, btnElement) {
+    if (!instanceName) return;
+
+    navigator.clipboard.writeText(instanceName).then(() => {
+        const icon = $(btnElement).find('i');
+        const originalClass = icon.attr('class');
+        
+        icon.attr('class', 'bi bi-check2 text-success');
+        
+        // Optional quick toast
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 2000,
+            timerProgressBar: true,
+            background: '#131c2e',
+            color: '#ffffff'
+        });
+        
+        Toast.fire({
+            icon: 'success',
+            title: `Instância copiada: ${instanceName}`
+        });
+
+        setTimeout(() => {
+            icon.attr('class', originalClass);
+        }, 2000);
+    }).catch(err => {
+        console.error('Falha ao copiar:', err);
+    });
 }

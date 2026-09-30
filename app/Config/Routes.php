@@ -5,7 +5,7 @@ use CodeIgniter\Router\RouteCollection;
 /**
  * @var RouteCollection $routes
  */
-$routes->get('/', 'Home::index');
+$routes->get('/', 'Whatsapp::index');
 
 $routes->group('whatsapp', function($routes) {
     $routes->get('/', 'Whatsapp::index');
